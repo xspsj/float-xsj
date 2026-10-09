@@ -382,10 +382,19 @@ export function VideoCallScreen({ session, character, onEnd, onConnect, initiato
             ? ("custom" as const)
             : undefined;
 
+        const HANGUP_RE = /\[(?:挂断|挂断电话|挂断通话|挂断视频|结束通话)\]|\*(?:挂断了电话|挂断了视频|按下了挂断|挂断了通话)\*/;
+        const shouldHangup = HANGUP_RE.test(aiResponseText);
+
         // Filter out non-chat action types
-        const chatParts = parts.filter(p =>
-            !p.mediaType || !["voice_call", "video_call", "poke", "accept_red_packet", "decline_red_packet", "accept_transfer", "decline_transfer", "accept_payment_request", "decline_payment_request"].includes(p.mediaType)
-        );
+        const chatParts = parts
+            .filter(p =>
+                !p.mediaType || !["voice_call", "video_call", "poke", "accept_red_packet", "decline_red_packet", "accept_transfer", "decline_transfer", "accept_payment_request", "decline_payment_request"].includes(p.mediaType)
+            )
+            .map(p => ({
+                ...p,
+                content: p.content.replace(HANGUP_RE, "").trim(),
+            }))
+            .filter(p => p.mediaType || p.content.trim());
 
         if (chatParts.length === 0 && (statusPanel || innerMonologue)) {
             const aiMsg = pushChatMessage({
@@ -416,7 +425,7 @@ export function VideoCallScreen({ session, character, onEnd, onConnect, initiato
             .filter(p => !p.mediaType && p.content.trim())
             .map(p => p.content);
 
-        return { cleanParts, stateValues };
+        return { cleanParts, stateValues, shouldHangup };
     }, [session.id, session.contactId]);
 
     // ── Full conversation turn ──────────────────────
@@ -438,17 +447,22 @@ export function VideoCallScreen({ session, character, onEnd, onConnect, initiato
             }));
             if (stateRef.current === "ENDED") return;
 
-            const { cleanParts } = processAIResponse(aiResponseText);
+            const { cleanParts, shouldHangup } = processAIResponse(aiResponseText);
             const displayText = cleanParts.join("\n");
             const speechText = stripBilingualForSpeech(displayText);
 
-            if (!displayText) { setCallState("IDLE"); return; }
+            if (!displayText) {
+                if (shouldHangup) handleCharacterHangup();
+                else setCallState("IDLE");
+                return;
+            }
 
             setSubtitles(prev => [...prev, { id: `ai-${Date.now()}`, role: "assistant", text: displayText }]);
 
             // 缩小为悬浮窗期间收到的回复：只静默记录文字，不播放语音
             if (minimizedRef.current) {
-                setCallState("IDLE");
+                if (shouldHangup) handleCharacterHangup();
+                else setCallState("IDLE");
                 return;
             }
 
@@ -468,7 +482,10 @@ export function VideoCallScreen({ session, character, onEnd, onConnect, initiato
                 } catch (e) { console.warn("[VideoCall] TTS failed:", e); }
             }
 
-            if (stateRef.current !== "ENDED") setCallState("IDLE");
+            if (stateRef.current !== "ENDED") {
+                if (shouldHangup) handleCharacterHangup();
+                else setCallState("IDLE");
+            }
         } catch (error: any) {
             if (stateRef.current !== "ENDED") {
                 setSubtitles(prev => [...prev, { id: `err-${Date.now()}`, role: "assistant", text: `⚠️ ${error?.message || "发送失败"}` }]);
@@ -611,6 +628,23 @@ export function VideoCallScreen({ session, character, onEnd, onConnect, initiato
         messagesRef.current = [...messagesRef.current, endMsg];
         setTimeout(() => onEnd(), 1500);
     }, [session.id, callDuration, onEnd, stopCameraStream]);
+
+    const handleCharacterHangup = useCallback(() => {
+        setCallState("ENDED");
+        if (sttRef.current) { sttRef.current.abort(); sttRef.current = null; }
+        if (audioAbortRef.current) { audioAbortRef.current(); audioAbortRef.current = null; }
+        stopCameraStream();
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
+
+        const charName = character.name || "对方";
+        const endMsg = pushChatMessage({
+            sessionId: session.id, role: "assistant",
+            content: `[${charName}挂断了视频通话 时长 ${formatTime(callDuration)}]`,
+            mediaData: { callDuration: formatTime(callDuration) },
+        });
+        messagesRef.current = [...messagesRef.current, endMsg];
+        setTimeout(() => onEnd(), 1500);
+    }, [session.id, character.name, callDuration, onEnd, stopCameraStream]);
 
     // 通话音频会话 + 卸载兜底：不经挂断键退出时释放识别与在途播放，
     // 防止识别自动重启循环在后台无限自我重启、麦克风永不归还（详见 voice-call-screen）。

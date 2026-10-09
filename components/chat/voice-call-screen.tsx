@@ -297,10 +297,20 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
             ? ("custom" as const)
             : undefined;
 
+        // Detect if character wants to hang up the call
+        const HANGUP_RE = /\[(?:挂断|挂断电话|挂断通话|挂断语音|结束通话)\]|\*(?:挂断了电话|挂断了语音|按下了挂断|挂断了通话)\*/;
+        const shouldHangup = HANGUP_RE.test(aiResponseText);
+
         // Filter out non-chat action types (voice_call, video_call, poke, etc.)
-        const chatParts = parts.filter(p =>
-            !p.mediaType || !["voice_call", "video_call", "poke", "accept_red_packet", "decline_red_packet", "accept_transfer", "decline_transfer", "accept_payment_request", "decline_payment_request"].includes(p.mediaType)
-        );
+        const chatParts = parts
+            .filter(p =>
+                !p.mediaType || !["voice_call", "video_call", "poke", "accept_red_packet", "decline_red_packet", "accept_transfer", "decline_transfer", "accept_payment_request", "decline_payment_request"].includes(p.mediaType)
+            )
+            .map(p => ({
+                ...p,
+                content: p.content.replace(HANGUP_RE, "").trim(),
+            }))
+            .filter(p => p.mediaType || p.content.trim());
 
         // Save messages to storage
         if (chatParts.length === 0 && (statusPanel || innerMonologue)) {
@@ -338,7 +348,7 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
             .filter(p => !p.mediaType && p.content.trim())
             .map(p => p.content);
 
-        return { cleanParts, stateValues };
+        return { cleanParts, stateValues, shouldHangup };
     }, [session.id, session.contactId]);
 
     // ── Full conversation turn ──────────────────────
@@ -371,12 +381,16 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
             if (stateRef.current === "ENDED") return;
 
             // 4. Process response
-            const { cleanParts } = processAIResponse(aiResponseText);
+            const { cleanParts, shouldHangup } = processAIResponse(aiResponseText);
             const displayText = cleanParts.join("\n");
             const speechText = stripBilingualForSpeech(displayText);
 
             if (!displayText) {
-                setCallState("IDLE");
+                if (shouldHangup) {
+                    handleCharacterHangup();
+                } else {
+                    setCallState("IDLE");
+                }
                 return;
             }
 
@@ -386,7 +400,11 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
 
             // 缩小为悬浮窗期间收到的回复：只静默记录文字，不播放语音
             if (minimizedRef.current) {
-                setCallState("IDLE");
+                if (shouldHangup) {
+                    handleCharacterHangup();
+                } else {
+                    setCallState("IDLE");
+                }
                 return;
             }
 
@@ -411,7 +429,11 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
             }
 
             if (stateRef.current !== "ENDED") {
-                setCallState("IDLE");
+                if (shouldHangup) {
+                    handleCharacterHangup();
+                } else {
+                    setCallState("IDLE");
+                }
             }
         } catch (error: any) {
             console.error("[VoiceCall] Error:", error);
@@ -628,6 +650,35 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
         // Delay then close
         setTimeout(() => onEnd(), 1500);
     }, [session.id, callDuration, onEnd]);
+
+    const handleCharacterHangup = useCallback(() => {
+        setCallState("ENDED");
+
+        if (sttRef.current) {
+            sttRef.current.abort();
+            sttRef.current = null;
+        }
+
+        if (audioAbortRef.current) {
+            audioAbortRef.current();
+            audioAbortRef.current = null;
+        }
+
+        if (window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+        }
+
+        const charName = character.name || "对方";
+        const endMsg = pushChatMessage({
+            sessionId: session.id,
+            role: "assistant",
+            content: `[${charName}挂断了语音通话 时长 ${formatTime(callDuration)}]`,
+            mediaData: { callDuration: formatTime(callDuration) },
+        });
+        messagesRef.current = [...messagesRef.current, endMsg];
+
+        setTimeout(() => onEnd(), 1500);
+    }, [session.id, character.name, callDuration, onEnd]);
 
     // ── Render ──────────────────────────────────────
 
