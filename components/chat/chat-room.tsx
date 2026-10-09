@@ -92,7 +92,7 @@ import { ChatPluginSlot } from "@/components/chat/chat-plugin-slot";
 // ── Call system message detection ──────────────────────────
 // Call messages are stored with user/assistant role for correct prompt alternation,
 // but should render as centered system notifications in the UI.
-const CALL_SYS_RE = /\[我(?:向.+)?(?:发起了|挂断了|拒绝了|取消了)(?:群?(?:语音|视频)通话)/;
+const CALL_SYS_RE = /\[(?:我|[^\s\]]+)(?:向.+)?(?:发起了|挂断了|拒绝了|取消了)(?:群?(?:语音|视频)通话)/;
 function isCallSysMsg(msg: ChatMessage): boolean {
     return CALL_SYS_RE.test(msg.content);
 }
@@ -5062,7 +5062,25 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         return wrapperRef.current ? createPortal(menu, wrapperRef.current) : menu;
     };
 
-    // ── Voice call message grouping ──────────────────
+    // ── Format Call Duration Helper ──────────────────
+function formatCallDurationDisplay(durationStr: string): string {
+    if (!durationStr) return "";
+    const parts = durationStr.split(":").map(p => parseInt(p, 10));
+    if (parts.length === 2) {
+        const [m, s] = parts;
+        if (m === 0 && s === 0) return "";
+        if (m === 0) return `${s}秒`;
+        return `${m}分钟`;
+    }
+    if (parts.length === 3) {
+        const [h, m] = parts;
+        if (h > 0) return `${h}小时${m}分钟`;
+        return `${m}分钟`;
+    }
+    return durationStr;
+}
+
+// ── Voice call message grouping ──────────────────
     // Deduplicate messages (staggered timeouts + concurrent reloads can cause duplicates)
     const dedupedMessages = useMemo(() => {
         const seen = new Set<string>();
@@ -5197,8 +5215,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     // Call end: 挂断/拒绝/取消（兼容"群语音通话"/"群视频通话"）
                     if (c.includes(`挂断了${kw}`) || c.includes(`挂断了群${kw}`) || c.includes(`拒绝了${kw}`) || c.includes(`拒绝了群${kw}`) || c.includes(`取消了${kw}`) || c.includes(`取消了群${kw}`)) {
                         endIdx = j;
-                        const match = c.match(/时长\s*(\d+:\d+)/);
-                        duration = match ? match[1] : "";
+                        const match = c.match(/时长\s*(\d+:\d+(?::\d+)?)/);
+                        duration = match ? match[1] : (projectedMessages[j].mediaData?.callDuration || "");
                         break;
                     }
                 }
@@ -5699,7 +5717,13 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                             <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
                                         </svg>
                                     )}
-                                    <span>{vcGroup.callType === "video" ? "视频通话" : "语音通话"}{vcGroup.duration ? ` ${vcGroup.duration}` : ""}{chatCount > 0 ? ` · ${chatCount}条消息` : ""}</span>
+                                    {(() => {
+                                        const typeLabel = vcGroup.callType === "video" ? "视频通话" : "语音通话";
+                                        const durLabel = formatCallDurationDisplay(vcGroup.duration);
+                                        return (
+                                            <span>{typeLabel}{durLabel ? ` · ${durLabel}` : ""}</span>
+                                        );
+                                    })()}
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
                                         className="ui-chevron-down-flip" {...(isExpanded ? { "data-open": "" } : {})}>
                                         <polyline points="6 9 12 15 18 9" />

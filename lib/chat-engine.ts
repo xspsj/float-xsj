@@ -1950,6 +1950,15 @@ export async function buildChatPromptMessages(
     }
     appendEmptyGenerateGuardMessage(llmMessages, config, historyForPrompt);
 
+    // 通话场景（语音/视频）专用系统指引：允许角色主动挂断电话
+    if (effectiveAppTags.includes("voice") || effectiveAppTags.includes("video")) {
+        const isVideo = effectiveAppTags.includes("video");
+        llmMessages.push({
+            role: "system",
+            content: `【当前处于${isVideo ? "视频" : "语音"}通话中】如果你想结束通话、说拜拜、有事要挂断，请在你的回复末尾附带 [挂断] 指令（例如："那我先挂啦，拜拜！[挂断]"）。系统收到后会自动执行挂断。不需要挂断时正常交谈即可。`,
+        });
+    }
+
     return { llmMessages, character, config, preset, regexes, userIdentity, toolsEnabled };
 }
 
