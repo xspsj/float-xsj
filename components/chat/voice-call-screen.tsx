@@ -672,7 +672,7 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
         const endMsg = pushChatMessage({
             sessionId: session.id,
             role: "assistant",
-            content: `[${charName}挂断了语音通话 时长 ${formatTime(callDuration)}]`,
+            content: `[${charName}挂断了语音通话]`,
             mediaData: { callDuration: formatTime(callDuration) },
         });
         messagesRef.current = [...messagesRef.current, endMsg];

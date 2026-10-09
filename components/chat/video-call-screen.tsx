@@ -639,7 +639,7 @@ export function VideoCallScreen({ session, character, onEnd, onConnect, initiato
         const charName = character.name || "对方";
         const endMsg = pushChatMessage({
             sessionId: session.id, role: "assistant",
-            content: `[${charName}挂断了视频通话 时长 ${formatTime(callDuration)}]`,
+            content: `[${charName}挂断了视频通话]`,
             mediaData: { callDuration: formatTime(callDuration) },
         });
         messagesRef.current = [...messagesRef.current, endMsg];
