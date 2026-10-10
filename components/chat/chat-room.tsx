@@ -6758,27 +6758,47 @@ function formatCallDurationDisplay(durationStr: string): string {
                 </div>
             )}
 
-            {/* 单聊语音/视频通话：内联挂载（而非提前 return），使缩小为悬浮窗时通话组件
-                不被卸载，计时/字幕等状态得以保留；组件内部依据 minimized 决定渲染
-                全屏界面还是左侧悬浮窗 */}
-            {showVoiceCall && character && (
+            {/* 单聊语音/视频通话：全屏时由聊天室全屏承接；缩小为小窗时提升至全局桌面悬浮 */}
+            {showVoiceCall && character && !callMinimized && (
                 <VoiceCallScreen
                     session={session}
                     character={character}
                     initiator={callInitiator}
-                    minimized={callMinimized}
-                    onMinimize={() => setCallMinimized(true)}
+                    minimized={false}
+                    onMinimize={() => {
+                        setCallMinimized(true);
+                        import("@/lib/global-call-store").then(m => {
+                            m.setGlobalCallState({
+                                type: "voice",
+                                session,
+                                character,
+                                initiator: callInitiator,
+                                minimized: true,
+                            });
+                        });
+                    }}
                     onRestore={() => setCallMinimized(false)}
                     onEnd={() => returnFromCall(() => setShowVoiceCall(false))}
                 />
             )}
-            {showVideoCall && character && (
+            {showVideoCall && character && !callMinimized && (
                 <VideoCallScreen
                     session={session}
                     character={character}
                     initiator={callInitiator}
-                    minimized={callMinimized}
-                    onMinimize={() => setCallMinimized(true)}
+                    minimized={false}
+                    onMinimize={() => {
+                        setCallMinimized(true);
+                        import("@/lib/global-call-store").then(m => {
+                            m.setGlobalCallState({
+                                type: "video",
+                                session,
+                                character,
+                                initiator: callInitiator,
+                                minimized: true,
+                            });
+                        });
+                    }}
                     onRestore={() => setCallMinimized(false)}
                     onEnd={() => returnFromCall(() => setShowVideoCall(false))}
                 />

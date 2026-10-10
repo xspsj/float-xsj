@@ -140,6 +140,9 @@ import { useWeixinBridge } from "@/lib/use-weixin-bridge";
 import { startWeixinCloudRealtimeSync } from "@/lib/weixin-cloud-sync";
 import { WeixinSyncToast } from "@/components/weixin-sync-toast";
 import { sendBrowserNotification } from "@/lib/browser-notification";
+import { getGlobalCallState, setGlobalCallState, subscribeGlobalCallState, type GlobalCallState } from "@/lib/global-call-store";
+import { VoiceCallScreen } from "@/components/chat/voice-call-screen";
+import { VideoCallScreen } from "@/components/chat/video-call-screen";
 import type { ChatSharePayload } from "@/lib/chat-share";
 import { completePendingMcpOAuthCallback } from "@/lib/tool-executor";
 import { LayoutGrid, LoaderCircle, RefreshCw } from "lucide-react";
@@ -1857,6 +1860,15 @@ export function DesktopShell({ initialThemeProfile, initialThemeAssets }: Deskto
     }
     // Specific pages update their own precise context via notifyMascotPageContext
   }, [activeApp]);
+
+  const [globalCall, setGlobalCall] = useState<GlobalCallState | null>(null);
+
+  useEffect(() => {
+    setGlobalCall(getGlobalCallState());
+    return subscribeGlobalCallState((state) => {
+      setGlobalCall(state ? { ...state } : null);
+    });
+  }, []);
 
   // Listen for AI-initiated call triggers globally (incoming call bar)
   useEffect(() => {
@@ -4311,6 +4323,41 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:#121110;color:rgb
                   ))}
                 </div>
               ) : null}
+
+              {/* 全局通话悬浮小窗（跨 App / 跨桌面） */}
+              {globalCall && globalCall.minimized && (
+                <div style={{ position: "absolute", top: 48, left: 12, zIndex: 99999 }}>
+                  {globalCall.type === "voice" ? (
+                    <VoiceCallScreen
+                      session={globalCall.session}
+                      character={globalCall.character}
+                      initiator={globalCall.initiator}
+                      minimized={true}
+                      onMinimize={() => {}}
+                      onRestore={() => {
+                        setGlobalCallState({ ...globalCall, minimized: false });
+                        setActiveApp("chat" as DesktopIconId);
+                        setChatInitSessionId(globalCall.session.id);
+                      }}
+                      onEnd={() => setGlobalCallState(null)}
+                    />
+                  ) : (
+                    <VideoCallScreen
+                      session={globalCall.session}
+                      character={globalCall.character}
+                      initiator={globalCall.initiator}
+                      minimized={true}
+                      onMinimize={() => {}}
+                      onRestore={() => {
+                        setGlobalCallState({ ...globalCall, minimized: false });
+                        setActiveApp("chat" as DesktopIconId);
+                        setChatInitSessionId(globalCall.session.id);
+                      }}
+                      onEnd={() => setGlobalCallState(null)}
+                    />
+                  )}
+                </div>
+              )}
 
               {/* Incoming call bar — global overlay */}
               {incomingCall && (
