@@ -5192,11 +5192,25 @@
   inset: 0;
   background: linear-gradient(to top, rgba(0, 0, 0, 0.68), rgba(0, 0, 0, 0) 55%);
 }
-.call-mini-window-name {
+.call-mini-window-info {
   position: relative;
   z-index: 1;
   width: 100%;
-  padding: 6px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+}
+.call-mini-window-duration {
+  font-size: calc(11px * var(--app-text-scale, 1));
+  font-weight: 700;
+  color: #07c160;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  letter-spacing: 0.5px;
+}
+.call-mini-window-name {
+  width: 100%;
   color: #fff;
   font-size: calc(11.7px * var(--app-text-scale, 1));
   font-weight: 600;
