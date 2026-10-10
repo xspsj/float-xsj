@@ -609,14 +609,25 @@ export function VideoCallScreen({ session, character, onEnd, onConnect, initiato
         stopCameraStream();
         if (window.speechSynthesis) window.speechSynthesis.cancel();
 
+        const actualSec = callStartRef.current ? Math.floor((Date.now() - callStartRef.current) / 1000) : callDuration;
+        const formatted = formatTime(actualSec);
+
         const endMsg = pushChatMessage({
-            sessionId: session.id, role: "user",
-            content: `[我挂断了视频通话]`,
-            mediaData: { callDuration: formatTime(callDuration) },
+            sessionId: session.id,
+            role: "user",
+            content: actualSec > 0 ? `通话时长 ${formatted}` : "已取消",
+            mediaType: "video_call",
+            mediaData: {
+                callType: "video",
+                initiator,
+                status: actualSec > 0 ? "ended" : "cancelled",
+                callDuration: formatted,
+                endedBy: "user",
+            },
         });
         messagesRef.current = [...messagesRef.current, endMsg];
         setTimeout(() => onEnd(), 1500);
-    }, [session.id, callDuration, onEnd, stopCameraStream]);
+    }, [session.id, initiator, callDuration, onEnd, stopCameraStream]);
 
     const handleCharacterHangup = useCallback(() => {
         setCallState("ENDED");
@@ -628,14 +639,23 @@ export function VideoCallScreen({ session, character, onEnd, onConnect, initiato
         const charName = character.name || "对方";
         const currentSecs = callStartRef.current ? Math.max(1, Math.floor((Date.now() - callStartRef.current) / 1000)) : callDuration;
         const durStr = formatTime(currentSecs);
+
         const endMsg = pushChatMessage({
-            sessionId: session.id, role: "assistant",
-            content: `[${charName}挂断了视频通话 时长 ${durStr}]`,
-            mediaData: { callDuration: durStr },
+            sessionId: session.id,
+            role: "assistant",
+            content: `通话时长 ${durStr}`,
+            mediaType: "video_call",
+            mediaData: {
+                callType: "video",
+                initiator,
+                status: "ended",
+                callDuration: durStr,
+                endedBy: "character",
+            },
         });
         messagesRef.current = [...messagesRef.current, endMsg];
         setTimeout(() => onEnd(), 1500);
-    }, [session.id, character.name, callDuration, onEnd, stopCameraStream]);
+    }, [session.id, character.name, initiator, callDuration, onEnd, stopCameraStream]);
 
     // 通话音频会话 + 卸载兜底：不经挂断键退出时释放识别与在途播放，
     // 防止识别自动重启循环在后台无限自我重启、麦克风永不归还（详见 voice-call-screen）。

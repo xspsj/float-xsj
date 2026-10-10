@@ -98,6 +98,7 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
     const sttWarningShownRef = useRef(false);
     const subtitleScrollRef = useRef<HTMLDivElement>(null);
     const messagesRef = useRef<ChatMessage[]>([]);
+    const turnHistoryRef = useRef<Array<{ role: "user" | "assistant"; text: string }>>([]);
     const _initUi = resolveUserIdentity(session.contactId, "chat");
     const userNameRef = useRef<string>(_initUi?.name || "你");
 
@@ -217,14 +218,20 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
         // Insert system message (skip if already exists from strict mode remount)
         const lastMsg = messagesRef.current[messagesRef.current.length - 1];
         const initRole = initiator === "character" ? "assistant" : "user";
-        if (!lastMsg || !(lastMsg.content.includes("发起了语音通话"))) {
+        if (!lastMsg || !(lastMsg.mediaType === "voice_call")) {
             const callMsg = initiator === "character"
-                ? `[我向${userNameRef.current}发起了语音通话]`
-                : `[我向${character.name}发起了语音通话]`;
+                ? "语音通话"
+                : "语音通话";
             const sysMsg = pushChatMessage({
                 sessionId: session.id,
                 role: initRole,
                 content: callMsg,
+                mediaType: "voice_call",
+                mediaData: {
+                    callType: "voice",
+                    initiator,
+                    status: "connecting",
+                },
             });
             messagesRef.current = [...messagesRef.current, sysMsg];
         }
@@ -301,36 +308,8 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
             }))
             .filter(p => p.mediaType || p.content.trim());
 
-        // Save messages to storage
-        if (chatParts.length === 0 && (statusPanel || innerMonologue)) {
-            const aiMsg = pushChatMessage({
-                sessionId: session.id,
-                role: "assistant",
-                content: "",
-                statusPanel,
-                statusRegionMode,
-                innerMonologue,
-                stateValues: stateValues.length > 0 ? stateValues : undefined,
-                freshStateValues,
-            });
-            messagesRef.current = [...messagesRef.current, aiMsg];
-        } else {
-            const newMsgs = chatParts.map((part, idx) =>
-                pushChatMessage({
-                    sessionId: session.id,
-                    role: "assistant",
-                    content: part.content,
-                    mediaType: part.mediaType,
-                    mediaData: part.mediaData,
-                    statusPanel: idx === 0 && statusPanel ? statusPanel : undefined,
-                    statusRegionMode: idx === 0 && statusPanel ? statusRegionMode : undefined,
-                    innerMonologue: idx === 0 && innerMonologue ? innerMonologue : undefined,
-                    stateValues: idx === 0 && stateValues.length > 0 ? stateValues : undefined,
-                    freshStateValues: idx === 0 ? freshStateValues : undefined,
-                })
-            );
-            messagesRef.current = [...messagesRef.current, ...newMsgs];
-        }
+        // Notice: do NOT push conversation parts to chat room messages.
+        // They stay in subtitles & turnHistoryRef to be saved into short-term memory upon hanging up.
 
         // Return clean text parts for TTS (exclude rich media content)
         const cleanParts = chatParts
@@ -343,17 +322,11 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
     // ── Full conversation turn ──────────────────────
 
     const runConversationTurn = useCallback(async (userText?: string) => {
-        // 1. Save user message (skip for initial greeting)
+        // 1. Record user speech to local subtitle & turn history (do NOT pollute chat room)
         if (userText) {
-            const userMsg = pushChatMessage({
-                sessionId: session.id,
-                role: "user",
-                content: userText,
-            });
-            messagesRef.current = [...messagesRef.current, userMsg];
-
-            // Add user subtitle
-            setSubtitles(prev => [...prev, { id: userMsg.id, role: "user", text: userText }]);
+            const tempUserMsgId = `user-${Date.now()}`;
+            turnHistoryRef.current.push({ role: "user", text: userText });
+            setSubtitles(prev => [...prev, { id: tempUserMsgId, role: "user", text: userText }]);
         }
 
         // 2. Switch to PROCESSING
@@ -385,6 +358,7 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
 
             // 5. Add AI subtitle
             const subtitleId = `ai-${Date.now()}`;
+            turnHistoryRef.current.push({ role: "assistant", text: displayText });
             setSubtitles(prev => [...prev, { id: subtitleId, role: "assistant", text: displayText }]);
 
             // 缩小为悬浮窗期间收到的回复：只静默记录文字，不播放语音
@@ -628,17 +602,43 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
             window.speechSynthesis.cancel();
         }
 
+        const actualSec = callStartRef.current ? Math.floor((Date.now() - callStartRef.current) / 1000) : callDuration;
+        const formatted = formatTime(actualSec);
+
         const endMsg = pushChatMessage({
             sessionId: session.id,
             role: "user",
-            content: `[我挂断了语音通话]`,
-            mediaData: { callDuration: formatTime(callDuration) },
+            content: actualSec > 0 ? `通话时长 ${formatted}` : "已取消",
+            mediaType: "voice_call",
+            mediaData: {
+                callType: "voice",
+                initiator,
+                status: actualSec > 0 ? "ended" : "cancelled",
+                callDuration: formatted,
+                endedBy: "user",
+            },
         });
         messagesRef.current = [...messagesRef.current, endMsg];
 
+        // Save conversation history to short-term memory
+        if (turnHistoryRef.current.length > 0) {
+            import("@/lib/memory-storage").then(({ saveMemoryEntry }) => {
+                const lines = turnHistoryRef.current.map(t => `${t.role === "user" ? userNameRef.current : character.name}: ${t.text}`).join("\n");
+                saveMemoryEntry({
+                    id: `call-mem-${Date.now()}`,
+                    characterId: session.contactId,
+                    type: "fact",
+                    content: `【语音通话记录】时长${formatted}。由${initiator === "character" ? character.name : "用户"}发起，由用户挂断。通话内容：\n${lines}`,
+                    tags: ["voice_call", "conversation"],
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                }).catch(err => console.warn("[VoiceCall] memory save error:", err));
+            });
+        }
+
         // Delay then close
         setTimeout(() => onEnd(), 1500);
-    }, [session.id, callDuration, onEnd]);
+    }, [session.id, session.contactId, character.name, initiator, callDuration, onEnd]);
 
     const handleCharacterHangup = useCallback(() => {
         setCallState("ENDED");
@@ -660,16 +660,40 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
         const charName = character.name || "对方";
         const currentSecs = callStartRef.current ? Math.max(1, Math.floor((Date.now() - callStartRef.current) / 1000)) : callDuration;
         const durStr = formatTime(currentSecs);
+
         const endMsg = pushChatMessage({
             sessionId: session.id,
             role: "assistant",
-            content: `[${charName}挂断了语音通话 时长 ${durStr}]`,
-            mediaData: { callDuration: durStr },
+            content: `通话时长 ${durStr}`,
+            mediaType: "voice_call",
+            mediaData: {
+                callType: "voice",
+                initiator,
+                status: "ended",
+                callDuration: durStr,
+                endedBy: "character",
+            },
         });
         messagesRef.current = [...messagesRef.current, endMsg];
 
+        // Save conversation history to short-term memory
+        if (turnHistoryRef.current.length > 0) {
+            import("@/lib/memory-storage").then(({ saveMemoryEntry }) => {
+                const lines = turnHistoryRef.current.map(t => `${t.role === "user" ? userNameRef.current : charName}: ${t.text}`).join("\n");
+                saveMemoryEntry({
+                    id: `call-mem-${Date.now()}`,
+                    characterId: session.contactId,
+                    type: "fact",
+                    content: `【语音通话记录】时长${durStr}。由${initiator === "character" ? charName : "用户"}发起，由${charName}主动挂断。通话内容：\n${lines}`,
+                    tags: ["voice_call", "conversation"],
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                }).catch(err => console.warn("[VoiceCall] memory save error:", err));
+            });
+        }
+
         setTimeout(() => onEnd(), 1500);
-    }, [session.id, character.name, callDuration, onEnd]);
+    }, [session.id, session.contactId, character.name, initiator, callDuration, onEnd]);
 
     // ── Render ──────────────────────────────────────
 

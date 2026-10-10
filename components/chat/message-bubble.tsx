@@ -120,6 +120,9 @@ export const MessageBubble = memo(function MessageBubble({ msg, onUpdate, charNa
             return <MediaFileBubble msg={msg} onUpdate={onUpdate} characterId={characterId} />;
         case "xiaohongshu_note_share":
             return <XiaohongshuShareBubble msg={msg} />;
+        case "voice_call":
+        case "video_call":
+            return <WeChatCallBubble msg={msg} />;
         case "audio":
             return <VoiceMessageBubble msg={msg} characterId={characterId} onUpdate={onUpdate} defaultTranslationExpanded={defaultTranslationExpanded} />;
         default: {
@@ -2388,6 +2391,29 @@ function VoiceMessageBubble({ msg, characterId, onUpdate, defaultTranslationExpa
                 ))}
             </div>
             <span className="voice-msg-dur">{synthFailed ? "合成失败·点击重试" : `${duration}"`}</span>
+        </div>
+    );
+}
+
+function WeChatCallBubble({ msg }: { msg: ChatMessage }) {
+    const isVideo = msg.mediaType === "video_call" || msg.mediaData?.callType === "video";
+    const duration = msg.mediaData?.callDuration;
+    const isUser = msg.role === "user";
+    const displayText = duration ? `通话时长 ${duration}` : (msg.content || "语音通话");
+
+    return (
+        <div className={`wechat-call-bubble flex items-center gap-2 py-1 px-2 ${isUser ? "flex-row" : "flex-row-reverse"}`}>
+            <span className="text-[14px] leading-snug">{displayText}</span>
+            {isVideo ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                    <path d="M23 7l-7 5 7 5V7z" />
+                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                </svg>
+            ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+                </svg>
+            )}
         </div>
     );
 }
