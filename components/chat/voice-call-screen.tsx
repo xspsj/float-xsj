@@ -79,8 +79,6 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
     const [callState, setCallState] = useState<CallState>("CONNECTING");
     const hasConnectedRef = useRef(false);
     const [callDuration, setCallDuration] = useState(0);
-    const callDurationRef = useRef(0);
-    useEffect(() => { callDurationRef.current = callDuration; }, [callDuration]);
     const [subtitles, setSubtitles] = useState<SubtitleEntry[]>([]);
     const [interimText, setInterimText] = useState("");
     const [isMuted, setIsMuted] = useState(false);
@@ -194,18 +192,7 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
             callStartRef.current = Date.now();
         }
 
-        // 缩小为悬浮窗：冻结计时显示，不再推进
-        if (minimized) {
-            if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-            if (pausedAtRef.current === null) pausedAtRef.current = Date.now();
-            return;
-        }
-        // 从悬浮窗恢复：把冻结期间流逝的时间补回起点，避免时长跳变
-        if (pausedAtRef.current !== null) {
-            callStartRef.current += Date.now() - pausedAtRef.current;
-            pausedAtRef.current = null;
-        }
-
+        // 缩小为悬浮窗时计时器继续按真实时间推进
         timerRef.current = setInterval(() => {
             setCallDuration(Math.floor((Date.now() - callStartRef.current) / 1000));
         }, 1000);
@@ -213,7 +200,7 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
         return () => {
             if (timerRef.current) clearInterval(timerRef.current);
         };
-    }, [callState, minimized]);
+    }, [callState]);
 
     // ── Connecting animation (3s fake dial) ─────────
 
@@ -288,7 +275,7 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
 
     // ── AI response processing (same logic as chat-room) ──
 
-    const processAIResponse = useCallback((aiResponseText: string): { cleanParts: string[]; stateValues: StateValue[]; shouldHangup: boolean } => {
+    const processAIResponse = useCallback((aiResponseText: string): { cleanParts: string[]; stateValues: StateValue[] } => {
         // Use shared parseAIResponse for full rich media support (stickers, quotes, etc.)
         const previousState = getLatestCharacterStateValues(session.contactId);
 
@@ -671,7 +658,7 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
         }
 
         const charName = character.name || "对方";
-        const currentSecs = callStartRef.current ? Math.max(1, Math.floor((Date.now() - callStartRef.current) / 1000)) : (callDurationRef.current || callDuration);
+        const currentSecs = callStartRef.current ? Math.max(1, Math.floor((Date.now() - callStartRef.current) / 1000)) : callDuration;
         const durStr = formatTime(currentSecs);
         const endMsg = pushChatMessage({
             sessionId: session.id,
@@ -697,7 +684,10 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
                 title="点击返回通话"
             >
                 <span className="call-mini-window-overlay" />
-                <span className="call-mini-window-name">{character.name}</span>
+                <div className="call-mini-window-info">
+                    <span className="call-mini-window-duration">{callState === "CONNECTING" ? "接通中..." : formatTime(callDuration)}</span>
+                    <span className="call-mini-window-name">{character.name}</span>
+                </div>
             </button>
         );
     }
