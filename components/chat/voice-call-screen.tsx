@@ -252,19 +252,17 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
         }
     }, [callState]);
 
-    // ── Format time 几分几秒 ───────────────────────────
+    // ── Format time 数字格式 04:09 ───────────────────────────
 
     const formatTime = (seconds: number) => {
         const h = Math.floor(seconds / 3600);
         const m = Math.floor((seconds % 3600) / 60);
         const s = seconds % 60;
+        const pad = (n: number) => n.toString().padStart(2, "0");
         if (h > 0) {
-            return `${h}小时${m}分${s}秒`;
+            return `${pad(h)}:${pad(m)}:${pad(s)}`;
         }
-        if (m > 0) {
-            return s > 0 ? `${m}分${s}秒` : `${m}分钟`;
-        }
-        return `${Math.max(1, s)}秒`;
+        return `${pad(m)}:${pad(s)}`;
     };
 
     // ── State label ─────────────────────────────────
