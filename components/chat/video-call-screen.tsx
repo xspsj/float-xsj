@@ -287,13 +287,24 @@ export function VideoCallScreen({ session, character, onEnd, onConnect, initiato
         if (callState === "CONNECTING" || callState === "ENDED") return;
         if (!callStartRef.current) callStartRef.current = Date.now();
 
-        // 缩小为悬浮窗时继续根据真实时间流逝
+        // 缩小为悬浮窗：冻结计时显示，不再推进
+        if (minimized) {
+            if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+            if (pausedAtRef.current === null) pausedAtRef.current = Date.now();
+            return;
+        }
+        // 从悬浮窗恢复：把冻结期间流逝的时间补回起点，避免时长跳变
+        if (pausedAtRef.current !== null) {
+            callStartRef.current += Date.now() - pausedAtRef.current;
+            pausedAtRef.current = null;
+        }
+
         timerRef.current = setInterval(() => {
             setCallDuration(Math.floor((Date.now() - callStartRef.current) / 1000));
         }, 1000);
 
         return () => { if (timerRef.current) clearInterval(timerRef.current); };
-    }, [callState]);
+    }, [callState, minimized]);
 
     // ── Connecting animation ─────────────────────────
 
@@ -626,10 +637,12 @@ export function VideoCallScreen({ session, character, onEnd, onConnect, initiato
         if (window.speechSynthesis) window.speechSynthesis.cancel();
 
         const charName = character.name || "对方";
+        const currentSecs = callStartRef.current ? Math.max(1, Math.floor((Date.now() - callStartRef.current) / 1000)) : callDuration;
+        const durStr = formatTime(currentSecs);
         const endMsg = pushChatMessage({
             sessionId: session.id, role: "assistant",
-            content: `[${charName}挂断了视频通话]`,
-            mediaData: { callDuration: formatTime(callDuration) },
+            content: `[${charName}挂断了视频通话 时长 ${durStr}]`,
+            mediaData: { callDuration: durStr },
         });
         messagesRef.current = [...messagesRef.current, endMsg];
         setTimeout(() => onEnd(), 1500);
@@ -660,10 +673,7 @@ export function VideoCallScreen({ session, character, onEnd, onConnect, initiato
                 title="点击返回通话"
             >
                 <span className="call-mini-window-overlay" />
-                <div className="call-mini-window-info">
-                    <span className="call-mini-window-duration">{callState === "CONNECTING" ? "接通中..." : formatTime(callDuration)}</span>
-                    <span className="call-mini-window-name">{character.name}</span>
-                </div>
+                <span className="call-mini-window-name">{character.name}</span>
             </button>
         );
     }
