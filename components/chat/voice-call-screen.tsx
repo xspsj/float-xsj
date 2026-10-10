@@ -252,12 +252,19 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
         }
     }, [callState]);
 
-    // ── Format time MM:SS ───────────────────────────
+    // ── Format time 几分几秒 ───────────────────────────
 
     const formatTime = (seconds: number) => {
-        const m = Math.floor(seconds / 60);
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
         const s = seconds % 60;
-        return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+        if (h > 0) {
+            return `${h}小时${m}分${s}秒`;
+        }
+        if (m > 0) {
+            return s > 0 ? `${m}分${s}秒` : `${m}分钟`;
+        }
+        return `${Math.max(1, s)}秒`;
     };
 
     // ── State label ─────────────────────────────────
@@ -631,7 +638,7 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
         const endMsg = pushChatMessage({
             sessionId: session.id,
             role: "user",
-            content: `[我挂断了语音通话]`,
+            content: `我挂断了语音通话`,
             mediaData: { callDuration: formatTime(callDuration) },
         });
         messagesRef.current = [...messagesRef.current, endMsg];
@@ -663,7 +670,7 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
         const endMsg = pushChatMessage({
             sessionId: session.id,
             role: "assistant",
-            content: `[${charName}挂断了语音通话 时长 ${durStr}]`,
+            content: `${charName}挂断了语音通话`,
             mediaData: { callDuration: durStr },
         });
         messagesRef.current = [...messagesRef.current, endMsg];
