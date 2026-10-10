@@ -5216,7 +5216,14 @@ function formatCallDurationDisplay(durationStr: string): string {
                     if (c.includes(`挂断了${kw}`) || c.includes(`挂断了群${kw}`) || c.includes(`拒绝了${kw}`) || c.includes(`拒绝了群${kw}`) || c.includes(`取消了${kw}`) || c.includes(`取消了群${kw}`)) {
                         endIdx = j;
                         const match = c.match(/时长\s*(\d+:\d+(?::\d+)?)/);
-                        duration = match ? match[1] : (projectedMessages[j].mediaData?.callDuration || "");
+                        const endMsg = projectedMessages[j];
+                        duration = match ? match[1] : (endMsg.mediaData?.callDuration || "");
+                        if (!duration && (endMsg as any).displaySourceId) {
+                            const rawMsg = dedupedMessages.find(m => m.id === (endMsg as any).displaySourceId);
+                            if (rawMsg?.mediaData?.callDuration) {
+                                duration = rawMsg.mediaData.callDuration;
+                            }
+                        }
                         break;
                     }
                 }

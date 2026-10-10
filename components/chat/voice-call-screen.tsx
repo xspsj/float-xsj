@@ -192,18 +192,7 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
             callStartRef.current = Date.now();
         }
 
-        // 缩小为悬浮窗：冻结计时显示，不再推进
-        if (minimized) {
-            if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-            if (pausedAtRef.current === null) pausedAtRef.current = Date.now();
-            return;
-        }
-        // 从悬浮窗恢复：把冻结期间流逝的时间补回起点，避免时长跳变
-        if (pausedAtRef.current !== null) {
-            callStartRef.current += Date.now() - pausedAtRef.current;
-            pausedAtRef.current = null;
-        }
-
+        // 缩小为悬浮窗时继续根据真实时间流逝
         timerRef.current = setInterval(() => {
             setCallDuration(Math.floor((Date.now() - callStartRef.current) / 1000));
         }, 1000);
@@ -211,7 +200,7 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
         return () => {
             if (timerRef.current) clearInterval(timerRef.current);
         };
-    }, [callState, minimized]);
+    }, [callState]);
 
     // ── Connecting animation (3s fake dial) ─────────
 
@@ -693,7 +682,10 @@ export function VoiceCallScreen({ session, character, onEnd, onConnect, initiato
                 title="点击返回通话"
             >
                 <span className="call-mini-window-overlay" />
-                <span className="call-mini-window-name">{character.name}</span>
+                <div className="call-mini-window-info">
+                    <span className="call-mini-window-duration">{callState === "CONNECTING" ? "接通中..." : formatTime(callDuration)}</span>
+                    <span className="call-mini-window-name">{character.name}</span>
+                </div>
             </button>
         );
     }
